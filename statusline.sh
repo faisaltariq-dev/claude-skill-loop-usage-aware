@@ -1,6 +1,6 @@
 #!/bin/bash
 # Claude Code status line + 5h usage mirror.
-# stdin: status line JSON.  Side effect: ~/.claude/usage.txt.  stdout: one short line.
+# stdin: status line JSON.  Side effect: ~/.claude/usage.txt (5-hour and weekly).  stdout: one short line.
 # macOS/BSD `date -r`; bash 3.2 safe.
 
 input=$(cat)
@@ -14,25 +14,32 @@ COUNTDOWN='def countdown:
   (. - now) as $s
   | if $s <= 0 then "now"
     else ($s / 60 | floor) as $m
-    | if $m >= 60 then "\($m / 60 | floor)h \($m % 60)m" else "\($m)m" end
+    | if $m >= 1440 then "\($m / 1440 | floor)d \(($m % 1440) / 60 | floor)h"
+      elif $m >= 60 then "\($m / 60 | floor)h \($m % 60)m" else "\($m)m" end
     end;'
 
 # ---- mirror (atomic: write tmp, then mv) --------------------------------
 if printf '%s' "$input" | jq -e . >/dev/null 2>&1; then
   fields=$(printf '%s' "$input" | jq -r "$COUNTDOWN"'
-    .rate_limits.five_hour
-    | if type == "object"
-      then "\(.resets_at | countdown)\t\(.used_percentage | round)%\t\(.resets_at)"
-      else "unknown\tunknown\t-"
-      end
+    [ (.rate_limits.five_hour
+       | if type == "object"
+         then "\(.resets_at | countdown)\t\(.used_percentage | round)%\t\(.resets_at)"
+         else "unknown\tunknown\t-" end),
+      (.rate_limits.seven_day
+       | if type == "object"
+         then "\(.resets_at | countdown)\t\(.used_percentage | round)%"
+         else "unknown\tunknown" end)
+    ] | join("\t")
   ' 2>/dev/null)
 
   if [ -n "$fields" ]; then
-    IFS=$'\t' read -r remaining used res <<<"$fields"
+    IFS=$'\t' read -r remaining used res wremaining wused <<<"$fields"
     stamp=$(date '+%F %T')
     if {
          printf '%-10s %s\n' "remaining" "$remaining"
          printf '%-10s %s\n' "used"      "$used"
+         printf '%-10s %s\n' "week_left" "$wremaining"
+         printf '%-10s %s\n' "week_used" "$wused"
          if [ "$res" = "-" ]; then
            printf '%-10s %s\n' "updated" "$stamp"
          else
@@ -58,9 +65,21 @@ line=$(printf '%s' "$input" | jq -r "$COUNTDOWN"'
     (if (.rate_limits.five_hour.used_percentage | type) == "number"
      then "5h \(.rate_limits.five_hour.used_percentage | round)%" else empty end),
     (if (.rate_limits.five_hour.resets_at | type) == "number"
-     then "reset \(.rate_limits.five_hour.resets_at | countdown)" else empty end)
+     then "reset \(.rate_limits.five_hour.resets_at | countdown)" else empty end),
+    (if (.rate_limits.seven_day.used_percentage | type) == "number"
+     then "wk \(.rate_limits.seven_day.used_percentage | round)%" else empty end)
   ] | join(" · ")
 ' 2>/dev/null)
+
+# next wakeup of this session (written by hooks/wakeup-mark.sh): "wake HH:MM", or "wake none"
+sid=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null)
+wake="none"
+wf="${HOME}/.claude/state/wakeups/${sid}"
+if [ -n "$sid" ] && [ -f "$wf" ]; then
+  at=$(cat "$wf" 2>/dev/null)
+  case "$at" in ''|*[!0-9]*) ;; *) [ "$at" -gt "$(date +%s)" ] && wake=$(date -r "$at" '+%H:%M') ;; esac
+fi
+[ -n "$line" ] && line="$line · wake $wake" || line="wake $wake"
 
 printf '%s' "$line"
 
