@@ -40,6 +40,8 @@ ScheduleWakeup (`~/.claude/hooks/wakeup-mark.sh`) writes the time the runtime co
 date -r "$(cat ~/.claude/state/wakeups/<session_id>)" '+%H:%M'
 ```
 
+- **Missed wakeups** are logged in `~/.claude/state/wakeups/missed.log` (fired 10+ min late, or never fired); `wakeups.log` has every arm, fire and stop. If the Stop hook says "A loop is active but no wakeup is armed", re-arm for the next slot (or stop the loop) before ending the turn.
+- A prompt starting with `/loop` is treated as a wakeup firing. The owner asks for loops in plain words; if they ever type `/loop` themselves, they'll say so.
 - **Every turn of a /loop must end with a wakeup armed** (unless the loop is meant to stop). `wake none` in the
   status line while a loop should be running means a wakeup was missed: re-arm it.
 - If a wakeup was armed before the hook was installed (or the settings weren't reloaded), the line shows `none` even
