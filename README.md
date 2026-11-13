@@ -16,6 +16,9 @@ Opus 5.5 · ctx 22% · 5h 60% · reset 26m · wk 42% · wake 16:15
 
 The `loop` skill decides *when* to wake; this one says *how much budget there is* and shows the wake time.
 
+> ⚠️ **Not confirmed reliable yet.** The next-wakeup display (`wake HH:MM`) is new and hasn't been proven over many
+> real loops. Treat it as a hint, not a guarantee.
+
 ## What's here
 
 | file | what it does |
